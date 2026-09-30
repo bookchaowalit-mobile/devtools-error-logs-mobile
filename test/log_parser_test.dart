@@ -73,4 +73,77 @@ WARN slow''');
     ]);
     expect(countByLevel(entries)[LogLevel.error], 3);
   });
+
+  group('edge cases (pass 3)', () {
+    test('lone CR and Unicode line separators no longer crash', () {
+      final entries = parseLog('INFO a\rWARN b\rERROR c\u2028d');
+      expect(entries.map((e) => e.level), [
+        LogLevel.info,
+        LogLevel.warn,
+        LogLevel.error,
+      ]);
+      expect(entries.last.message, 'c\u2028d');
+      expect(parseLine('\u2028', 1).level, LogLevel.unknown);
+    });
+
+    test('bracketed timestamps', () {
+      final a = parseLine('[2026-01-01 10:00:00] ERROR boom', 1);
+      expect(a.level, LogLevel.error);
+      expect(a.timestamp, '2026-01-01 10:00:00');
+      expect(a.message, 'boom');
+      final b = parseLine('[10:00:01,250] [warn] slow', 2);
+      expect(b.level, LogLevel.warn);
+      expect(b.timestamp, '10:00:01,250');
+      final c = parseLine('[10:00:01] just text', 3);
+      expect(c.level, LogLevel.unknown);
+      expect(c.message, 'just text');
+    });
+
+    test('empty, level-only and whitespace lines', () {
+      expect(parseLog(''), isEmpty);
+      expect(parseLog(' \n\t\n'), isEmpty);
+      final e = parseLine('ERROR', 1);
+      expect(e.level, LogLevel.error);
+      expect(e.message, '');
+      expect(parseLine('Errors happen', 1).level, LogLevel.unknown);
+    });
+
+    test('Java and Python traces are attached to their entry', () {
+      final entries = parseLog(
+        'ERROR java.lang.IllegalStateException: x\n'
+        '\tat A.b(A.java:1)\n'
+        'Caused by: java.io.IOException: y\n'
+        '\t... 12 more\n'
+        'ERROR Traceback (most recent call last):\n'
+        '  File "app.py", line 3, in <module>\n'
+        '    main()\n'
+        'INFO done',
+      );
+      expect(entries.map((e) => e.lineNumber), [1, 5, 8]);
+      expect(entries[0].message, contains('Caused by: java.io.IOException: y'));
+      expect(entries[0].message, endsWith('... 12 more'));
+      expect(entries[1].message, endsWith('main()'));
+    });
+
+    test('indented lines are only attached after a Python frame', () {
+      final entries = parseLog('INFO a\n    indented note');
+      expect(entries, hasLength(2));
+    });
+
+    test('apostrophes do not swallow the message in signatures', () {
+      expect(
+        signatureOf("can't find user 'bob' (attempt 3)"),
+        "can't find user <str> (attempt <n>)",
+      );
+      expect(signatureOf('path "C:\\tmp" missing'), 'path <str> missing');
+    });
+
+    test('Thai and emoji messages group and filter', () {
+      final entries =
+          parseLog('ERROR ชำระเงินล้มเหลว 42\nERROR ชำระเงินล้มเหลว 43 😀');
+      expect(groupRepeats(entries), hasLength(2));
+      expect(signatureOf(entries.first.message), 'ชำระเงินล้มเหลว <n>');
+      expect(filterEntries(entries, query: 'ล้มเหลว'), hasLength(2));
+    });
+  });
 }

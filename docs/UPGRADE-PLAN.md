@@ -2,7 +2,7 @@
 
 ## Current state
 
-Score: 7/10 — log parsing, filtering and grouping with tested pure-Dart logic, honest CI and fail-closed release signing; still no app icon or E2E flow.
+Score: 7.5/10 — robust log parser (no crash on odd line endings, bracketed timestamps, Java/Python traces), a11y guideline tests and fail-closed signing; no redaction, file import, icon or E2E flow yet.
 
 ## Backlog
 
@@ -18,10 +18,18 @@ Score: 7/10 — log parsing, filtering and grouping with tested pure-Dart logic,
 - Add a CI job that builds a signed release bundle from repository secrets (keystore decoded at runtime, never committed).
 
 ### P2
-- Tablet layout (NavigationRail) and 130% text-scale widget test.
+- Tablet layout (NavigationRail).
 - Localisation (Thai/English) for UI strings.
 
-## Done in this pass (pass 2)
+## Done in this pass (pass 3)
+
+- Bug fix (crash): a pasted log with lone `\r` line endings (or U+2028) made `_linePattern.firstMatch(line)!` return null — `.` does not match line terminators — so the null check threw during build (red error screen). Lone CRs now split lines, the level regex uses `dotAll`, and the prefix match can never fail.
+- Bug fix: bracketed timestamps (`[2026-01-01 10:00:00] ERROR boom`, `[10:00:01] WARN`) — a very common format — were parsed as unknown-level messages; they now yield the timestamp and level.
+- Bug fix: signatures treated apostrophes as quotes (`can't find user 'bob'` → `can<str>bob'`), breaking grouping; a quote right after a letter is now left alone.
+- Improvement: Java `Caused by:` / `... N more` and Python `File "..."` frames (with their echoed source line) are attached to the entry instead of becoming separate unknown entries.
+- Edge-case unit tests for all of the above plus empty/level-only lines and Thai/emoji grouping and search. Widget tests: CR-only paste, empty states, repeat-count semantics ("2 times"), a11y guidelines, 200% text scale. Empty messages show "(no message)".
+
+## Done in pass 2
 
 - Release builds no longer sign with the debug key: `android/app/build.gradle.kts` reads the ignored `android/key.properties` and a Gradle guard fails any release assemble/bundle without it (pattern from `bookchaowalit-goal-tracker-mobile`). Root `.gitignore` also ignores `key.properties`, `*.jks`, `*.keystore`; README documents the setup. Not build-verified here (no Android SDK/Gradle in this environment).
 - Decided not to persist pasted logs: log output often contains tokens, emails or other personal data, so keeping it only in memory for the session is the safer default. Recorded as an opt-in backlog item instead.

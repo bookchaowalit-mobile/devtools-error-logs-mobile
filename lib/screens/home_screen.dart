@@ -91,7 +91,13 @@ class _HomeScreenState extends State<HomeScreen> {
           for (final g in groups.take(5))
             ListTile(
               dense: true,
-              leading: CircleAvatar(child: Text('${g.count}')),
+              leading: CircleAvatar(
+                child: Text(
+                  '${g.count}',
+                  semanticsLabel:
+                      '${g.count} ${g.count == 1 ? 'time' : 'times'}',
+                ),
+              ),
               title: Text(g.signature),
               subtitle: Text('${g.level.name} · first on line ${g.firstLine}'),
             ),
@@ -112,7 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               title: Text(
-                e.message,
+                e.message.isEmpty ? '(no message)' : e.message,
                 style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
               ),
               subtitle: Text('line ${e.lineNumber}'

@@ -36,52 +36,66 @@ const _levelAliases = {
   'PANIC': LogLevel.fatal,
 };
 
-// Optional ISO-ish or HH:MM:SS timestamp, then an optional [LEVEL] / LEVEL: /
-// LEVEL token, then the message.
-final _linePattern = RegExp(
-  r'^\s*'
-  r'(?<ts>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?|\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)?'
-  r'\s*'
-  r'(?:\[(?<lvl1>[A-Za-z]+)\]|(?<lvl2>[A-Za-z]+)(?=[:\s]|$))?'
-  r'\s*:?\s*'
-  r'(?<msg>.*)$',
+const _ts = r'\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?'
+    r'(?:Z|[+-]\d{2}:?\d{2})?|\d{2}:\d{2}:\d{2}(?:[.,]\d+)?';
+
+// Optional ISO-ish or HH:MM:SS timestamp, bare or in [brackets].
+final _prefixPattern = RegExp('^\\s*(?:\\[(?<ts1>$_ts)\\]|(?<ts2>$_ts))?\\s*');
+
+// Optional [LEVEL] / LEVEL: / LEVEL token, then the message. dotAll so that
+// stray line separators (U+2028, lone CR) never make the match fail.
+final _levelPattern = RegExp(
+  r'^(?:\[(?<lvl1>[A-Za-z]+)\]|(?<lvl2>[A-Za-z]+)(?=[:\s]|$))\s*:?\s*(?<msg>.*)$',
+  dotAll: true,
 );
 
 LogEntry parseLine(String line, int lineNumber) {
-  final m = _linePattern.firstMatch(line)!;
-  final ts = m.namedGroup('ts');
-  final token = (m.namedGroup('lvl1') ?? m.namedGroup('lvl2'))?.toUpperCase();
+  // The prefix pattern can match the empty string, so it always matches.
+  final prefix = _prefixPattern.firstMatch(line)!;
+  final ts = prefix.namedGroup('ts1') ?? prefix.namedGroup('ts2');
+  final rest = line.substring(prefix.end);
+  final m = _levelPattern.firstMatch(rest);
+  final token = (m?.namedGroup('lvl1') ?? m?.namedGroup('lvl2'))?.toUpperCase();
   final level = token == null ? null : _levelAliases[token];
   if (level == null) {
     // The first word was not a level; keep it as part of the message.
-    final rest =
-        ts == null ? line.trim() : line.trim().substring(ts.length).trim();
     return LogEntry(
       lineNumber: lineNumber,
       level: LogLevel.unknown,
-      message: rest,
+      message: rest.trim(),
       timestamp: ts,
     );
   }
   return LogEntry(
     lineNumber: lineNumber,
     level: level,
-    message: m.namedGroup('msg')!.trim(),
+    message: m!.namedGroup('msg')!.trim(),
     timestamp: ts,
   );
 }
+
+// Stack-trace continuation lines: Dart/JS/Java frames (`  at ...`, `  #0`),
+// Python frames (`  File "..."`), Java `Caused by:` and `... 12 more`.
+final _continuation = RegExp(
+  r'^(?:\s+at |\s+#\d|\s+File "|\s+\.\.\. \d+ more|Caused by: )',
+);
 
 /// Parses every non-blank line. Indented continuation lines (stack traces)
 /// are attached to the previous entry's message.
 List<LogEntry> parseLog(String text) {
   final entries = <LogEntry>[];
-  final lines = text.replaceAll('\r\n', '\n').split('\n');
+  // CRLF and lone CR both end a line (a lone CR used to crash parseLine).
+  final lines =
+      text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
+  var afterPythonFrame = false;
   for (var i = 0; i < lines.length; i++) {
     final line = lines[i];
     if (line.trim().isEmpty) continue;
-    final isContinuation = entries.isNotEmpty &&
-        (line.startsWith(RegExp(r'\s+at ')) ||
-            line.startsWith(RegExp(r'\s+#\d')));
+    final isFrame = _continuation.hasMatch(line);
+    // Python echoes the source line, indented, under each `File "..."` frame.
+    final isSourceEcho = afterPythonFrame && line.startsWith(RegExp(r'\s'));
+    afterPythonFrame = line.trimLeft().startsWith('File "');
+    final isContinuation = entries.isNotEmpty && (isFrame || isSourceEcho);
     if (isContinuation) {
       final prev = entries.removeLast();
       entries.add(
@@ -131,7 +145,8 @@ String signatureOf(String message) {
             r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b'),
         '<uuid>',
       )
-      .replaceAll(RegExp(r'''(["'])[^"']*\1'''), '<str>')
+      // A quote right after a letter is an apostrophe (can't), not a quote.
+      .replaceAll(RegExp(r'''(?<![A-Za-z])(["'])[^"'\n]*\1'''), '<str>')
       .replaceAll(RegExp(r'\d+'), '<n>')
       .trim();
 }
