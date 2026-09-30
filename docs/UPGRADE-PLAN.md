@@ -28,6 +28,7 @@ Score: 7.5/10 — robust log parser (no crash on odd line endings, bracketed tim
 - Bug fix: signatures treated apostrophes as quotes (`can't find user 'bob'` → `can<str>bob'`), breaking grouping; a quote right after a letter is now left alone.
 - Improvement: Java `Caused by:` / `... N more` and Python `File "..."` frames (with their echoed source line) are attached to the entry instead of becoming separate unknown entries.
 - Edge-case unit tests for all of the above plus empty/level-only lines and Thai/emoji grouping and search. Widget tests: CR-only paste, empty states, repeat-count semantics ("2 times"), a11y guidelines, 200% text scale. Empty messages show "(no message)".
+- The 200% text-scale widget test now runs at a 360 px phone width (it previously used the 800 px default test surface); no overflow found.
 
 ## Done in pass 2
 
